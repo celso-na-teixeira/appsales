@@ -1,8 +1,9 @@
 package com.store.app.product.service;
 
-import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -10,12 +11,14 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.store.app.product.dto.ProductRequest;
 import com.store.app.product.dto.ProductResponse;
+import com.store.app.product.dto.ProductSearchCriteria;
 import com.store.app.product.entity.Product;
 import com.store.app.product.mapper.ProductMapper;
 import com.store.app.product.repository.ManufacturerRepository;
 import com.store.app.product.repository.ProductCategoryRepository;
 import com.store.app.product.repository.ProductOriginRepository;
 import com.store.app.product.repository.ProductRepository;
+import com.store.app.product.repository.ProductSpecifications;
 
 import lombok.RequiredArgsConstructor;
 
@@ -24,8 +27,8 @@ import lombok.RequiredArgsConstructor;
 @Transactional(readOnly = true)
 public class ProductService {
 
-	// Upper bound of the NUMERIC(12,2) price column
-	private static final BigDecimal MAX_PRICE = new BigDecimal("9999999999.99");
+	private static final Set<String> SORTABLE_FIELDS = Set.of("id", "sku", "barcode", "name", "shortDescription",
+			"price", "weight", "active", "createdAt", "updatedAt");
 
 	private final ProductRepository productRepository;
 
@@ -37,10 +40,14 @@ public class ProductService {
 
 	private final ProductMapper productMapper;
 
-	public List<ProductResponse> search(String name, BigDecimal minPrice, BigDecimal maxPrice) {
-		return productRepository
-			.findByNameContainingIgnoreCaseAndPriceBetweenOrderByName(name != null ? name.trim() : "",
-					minPrice != null ? minPrice : BigDecimal.ZERO, maxPrice != null ? maxPrice : MAX_PRICE)
+	public List<ProductResponse> search(ProductSearchCriteria criteria, Sort sort) {
+		sort.forEach(order -> {
+			if (!SORTABLE_FIELDS.contains(order.getProperty())) {
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot sort by " + order.getProperty()
+						+ "; sortable fields: " + SORTABLE_FIELDS.stream().sorted().toList());
+			}
+		});
+		return productRepository.findAll(ProductSpecifications.matching(criteria), sort)
 			.stream()
 			.map(productMapper::toResponse)
 			.toList();

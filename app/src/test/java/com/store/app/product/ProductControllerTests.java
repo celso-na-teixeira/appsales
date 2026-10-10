@@ -23,8 +23,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.store.app.product.entity.Manufacturer;
 import com.store.app.product.entity.Product;
 import com.store.app.product.entity.ProductCategory;
+import com.store.app.product.entity.ProductOrigin;
 import com.store.app.product.repository.ManufacturerRepository;
 import com.store.app.product.repository.ProductCategoryRepository;
+import com.store.app.product.repository.ProductOriginRepository;
 import com.store.app.product.repository.ProductRepository;
 
 @SpringBootTest
@@ -43,6 +45,9 @@ class ProductControllerTests {
 	@Autowired
 	private ProductCategoryRepository categoryRepository;
 
+	@Autowired
+	private ProductOriginRepository originRepository;
+
 	private Manufacturer manufacturer;
 
 	private ProductCategory category;
@@ -52,6 +57,7 @@ class ProductControllerTests {
 		productRepository.deleteAll();
 		manufacturerRepository.deleteAll();
 		categoryRepository.deleteAll();
+		originRepository.deleteAll();
 
 		manufacturer = new Manufacturer();
 		manufacturer.setName("Acme");
@@ -95,6 +101,65 @@ class ProductControllerTests {
 	}
 
 	@Test
+	void sortsByRequestedFields() throws Exception {
+		save("SKU-1", "Gaming Laptop", "1500.00");
+		save("SKU-2", "Office Laptop", "700.00");
+		save("SKU-3", "Mouse", "700.00");
+
+		mockMvc.perform(get("/api/products").param("sort", "price,desc"))
+			.andExpect(jsonPath("$[0].sku").value("SKU-1"));
+		mockMvc.perform(get("/api/products").param("sort", "price").param("sort", "sku,desc"))
+			.andExpect(jsonPath("$[*].sku", contains("SKU-3", "SKU-2", "SKU-1")));
+		mockMvc.perform(get("/api/products").param("name", "laptop").param("sort", "sku,desc"))
+			.andExpect(jsonPath("$[*].sku", contains("SKU-2", "SKU-1")));
+		mockMvc.perform(get("/api/products").param("sort", "nope")).andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void searchesByEveryField() throws Exception {
+		Manufacturer other = new Manufacturer();
+		other.setName("Globex");
+		other = manufacturerRepository.save(other);
+		ProductOrigin origin = new ProductOrigin();
+		origin.setCountry("Portugal");
+		origin = originRepository.save(origin);
+
+		Product laptop = save("LAP-1", "Gaming Laptop", "1500.00");
+		laptop.setBarcode("560001");
+		laptop.setShortDescription("Fast 100% of the time");
+		laptop.setDescription("RGB keyboard included");
+		laptop.setWeight(new BigDecimal("2.500"));
+		laptop.setOrigin(origin);
+		productRepository.save(laptop);
+
+		Product mouse = save("MOU-1", "Mouse", "25.00");
+		mouse.setBarcode("560002");
+		mouse.setShortDescription("Wireless");
+		mouse.setWeight(new BigDecimal("0.100"));
+		mouse.setManufacturer(other);
+		mouse.setActive(false);
+		productRepository.save(mouse);
+
+		assertSearch("sku", "lap", "LAP-1");
+		assertSearch("barcode", "0002", "MOU-1");
+		assertSearch("shortDescription", "WIRELESS", "MOU-1");
+		assertSearch("description", "keyboard", "LAP-1");
+		assertSearch("manufacturerId", other.getId().toString(), "MOU-1");
+		assertSearch("categoryId", category.getId().toString(), "LAP-1", "MOU-1");
+		assertSearch("originId", origin.getId().toString(), "LAP-1");
+		assertSearch("minWeight", "1", "LAP-1");
+		assertSearch("maxWeight", "1", "MOU-1");
+		assertSearch("active", "false", "MOU-1");
+		// wildcards in the search text are matched literally
+		assertSearch("shortDescription", "100%", "LAP-1");
+		mockMvc.perform(get("/api/products").param("sku", "_")).andExpect(jsonPath("$", hasSize(0)));
+
+		mockMvc.perform(get("/api/products").param("sku", "1").param("active", "true").param("maxPrice", "2000"))
+			.andExpect(jsonPath("$[*].sku", contains("LAP-1")));
+		mockMvc.perform(get("/api/products").param("active", "maybe")).andExpect(status().isBadRequest());
+	}
+
+	@Test
 	void updatesAndDeletesProduct() throws Exception {
 		Long id = save("SKU-1", "Mouse", "25.00").getId();
 
@@ -134,6 +199,12 @@ class ProductControllerTests {
 		product.setManufacturer(manufacturer);
 		product.setCategory(category);
 		return productRepository.save(product);
+	}
+
+	private void assertSearch(String param, String value, String... expectedSkus) throws Exception {
+		mockMvc.perform(get("/api/products").param(param, value))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[*].sku", contains(expectedSkus)));
 	}
 
 	private String json(String sku, String price) {

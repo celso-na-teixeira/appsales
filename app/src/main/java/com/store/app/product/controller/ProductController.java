@@ -1,9 +1,10 @@
 package com.store.app.product.controller;
 
-import java.math.BigDecimal;
 import java.net.URI;
 import java.util.List;
 
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.SortDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -13,13 +14,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.store.app.product.dto.ProductRequest;
 import com.store.app.product.dto.ProductResponse;
+import com.store.app.product.dto.ProductSearchCriteria;
 import com.store.app.product.service.ProductService;
 
 import jakarta.validation.Valid;
@@ -33,10 +34,8 @@ public class ProductController {
 	private final ProductService productService;
 
 	@GetMapping
-	public List<ProductResponse> search(@RequestParam(required = false) String name,
-			@RequestParam(required = false) BigDecimal minPrice,
-			@RequestParam(required = false) BigDecimal maxPrice) {
-		return productService.search(name, minPrice, maxPrice);
+	public List<ProductResponse> search(ProductSearchCriteria criteria, @SortDefault("name") Sort sort) {
+		return productService.search(criteria, sort);
 	}
 
 	@GetMapping("/{id}")
