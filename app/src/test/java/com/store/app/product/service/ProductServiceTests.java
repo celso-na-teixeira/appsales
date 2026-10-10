@@ -3,6 +3,7 @@ package com.store.app.product.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,13 +16,17 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.store.app.product.dto.ProductRequest;
 import com.store.app.product.dto.ProductResponse;
+import com.store.app.product.dto.ProductSearchCriteria;
 import com.store.app.product.entity.Manufacturer;
 import com.store.app.product.entity.Product;
 import com.store.app.product.entity.ProductCategory;
@@ -34,6 +39,9 @@ import com.store.app.product.repository.ProductRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ProductServiceTests {
+
+	private static final ProductSearchCriteria NO_FILTERS = new ProductSearchCriteria(null, null, null, null, null,
+			null, null, null, null, null, null, null, null);
 
 	@Mock
 	private ProductRepository productRepository;
@@ -66,21 +74,20 @@ class ProductServiceTests {
 		category.setName("Laptops");
 	}
 
+	// Filtering itself is covered against a real database in ProductControllerTests
 	@Test
-	void searchWithoutFiltersMatchesEveryNameAndPrice() {
-		when(productRepository.findByNameContainingIgnoreCaseAndPriceBetweenOrderByName("", BigDecimal.ZERO,
-				new BigDecimal("9999999999.99")))
+	void searchMapsMatchingProductsInRequestedOrder() {
+		Sort sort = Sort.by(Sort.Direction.DESC, "price");
+		when(productRepository.findAll(ArgumentMatchers.<Specification<Product>>any(), eq(sort)))
 			.thenReturn(List.of(product(1L, "SKU-1")));
 
-		assertThat(service.search(null, null, null)).extracting(ProductResponse::sku).containsExactly("SKU-1");
+		assertThat(service.search(NO_FILTERS, sort)).extracting(ProductResponse::sku).containsExactly("SKU-1");
 	}
 
 	@Test
-	void searchPassesTrimmedNameAndPriceBounds() {
-		service.search("  laptop ", new BigDecimal("100"), new BigDecimal("500"));
-
-		verify(productRepository).findByNameContainingIgnoreCaseAndPriceBetweenOrderByName("laptop",
-				new BigDecimal("100"), new BigDecimal("500"));
+	void searchRejectsUnknownSortField() {
+		assertStatus(() -> service.search(NO_FILTERS, Sort.by("manufacturer.name")), HttpStatus.BAD_REQUEST);
+		verify(productRepository, never()).findAll(ArgumentMatchers.<Specification<Product>>any(), any(Sort.class));
 	}
 
 	@Test
@@ -191,7 +198,7 @@ class ProductServiceTests {
 		when(productRepository.findById(1L)).thenReturn(Optional.empty());
 
 		assertStatus(() -> service.delete(1L), HttpStatus.NOT_FOUND);
-		verify(productRepository, never()).delete(any());
+		verify(productRepository, never()).delete(any(Product.class));
 	}
 
 	private static void assertStatus(ThrowingCallable call, HttpStatus expected) {
